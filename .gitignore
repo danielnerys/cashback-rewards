@@ -30,3 +30,6 @@ Thumbs.db
 # Variáveis de ambiente / segredos
 .env
 application-local.properties
+
+_trace2.txt
+
