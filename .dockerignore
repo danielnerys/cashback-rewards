@@ -1,0 +1,10 @@
+**/target/
+**/*.class
+**/*.jar
+.git/
+.gitignore
+.dockerignore
+*.log
+.idea/
+*.iml
+.DS_Store

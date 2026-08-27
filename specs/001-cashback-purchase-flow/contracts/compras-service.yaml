@@ -1,0 +1,232 @@
+openapi: 3.0.3
+info:
+  title: compras-service
+  version: "1.0.0"
+  description: >
+    Registra compras, cancelamentos e devoluções. Dispara (via outbox interno,
+    ver research.md) o cálculo/estorno de cashback no cashback-service. Toda
+    chamada HTTP feita por este serviço a outro serviço é síncrona direta,
+    nunca accept-and-acknowledge (constitution v1.2.1).
+servers:
+  - url: https://compras-service/v1
+paths:
+  /compras:
+    post:
+      summary: Registrar uma compra (FR-001)
+      operationId: registrarCompra
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovaCompra'
+      responses:
+        '201':
+          description: Compra registrada (sempre síncrono; não depende do cashback-service — FR-018)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Compra'
+        '400':
+          $ref: '#/components/responses/RequisicaoInvalida'
+        '409':
+          $ref: '#/components/responses/IdempotencyKeyConflitante'
+  /compras/{compraId}:
+    get:
+      summary: Consultar uma compra
+      operationId: consultarCompra
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: compraId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Compra encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Compra'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+  /compras/{compraId}/cancelamentos:
+    post:
+      summary: Registrar cancelamento total de uma compra (FR-006)
+      operationId: registrarCancelamento
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: compraId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoCancelamento'
+      responses:
+        '201':
+          description: Cancelamento registrado (síncrono; estorno de cashback é propagado via outbox)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cancelamento'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+        '409':
+          description: Compra já totalmente cancelada/devolvida
+  /compras/{compraId}/devolucoes:
+    post:
+      summary: Registrar devolução parcial de uma compra (FR-008)
+      operationId: registrarDevolucao
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: compraId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovaDevolucao'
+      responses:
+        '201':
+          description: Devolução registrada (síncrono; estorno proporcional propagado via outbox)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Devolucao'
+        '404':
+          $ref: '#/components/responses/NaoEncontrado'
+        '409':
+          description: Percentual devolvido excederia 100% da compra
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Chave fornecida pelo chamador; repetição retorna a resposta original (Principle III)
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Propagado a todas as chamadas de saída (Principle V); gerado se ausente
+  responses:
+    RequisicaoInvalida:
+      description: Corpo da requisição inválido
+    NaoEncontrado:
+      description: Recurso não encontrado
+    IdempotencyKeyConflitante:
+      description: Mesma Idempotency-Key usada com corpo de requisição diferente
+  schemas:
+    NovaCompra:
+      type: object
+      required: [usuarioId, valorCentavos, categoria, data]
+      properties:
+        usuarioId:
+          type: string
+          format: uuid
+        valorCentavos:
+          type: integer
+          format: int64
+          minimum: 1
+        categoria:
+          type: string
+        data:
+          type: string
+          format: date-time
+    Compra:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        usuarioId:
+          type: string
+          format: uuid
+        valorCentavos:
+          type: integer
+          format: int64
+        categoria:
+          type: string
+        data:
+          type: string
+          format: date-time
+        estado:
+          type: string
+          enum: [ATIVA, CANCELADA, PARCIALMENTE_DEVOLVIDA, TOTALMENTE_DEVOLVIDA]
+        percentualDevolvidoAcumulado:
+          type: number
+          format: double
+    NovoCancelamento:
+      type: object
+      required: [origem]
+      properties:
+        origem:
+          type: string
+          enum: [USUARIO, ATENDIMENTO]
+    Cancelamento:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        compraId:
+          type: string
+          format: uuid
+        origem:
+          type: string
+          enum: [USUARIO, ATENDIMENTO]
+        data:
+          type: string
+          format: date-time
+    NovaDevolucao:
+      type: object
+      required: [origem, percentualDevolvido]
+      properties:
+        origem:
+          type: string
+          enum: [USUARIO, ATENDIMENTO]
+        percentualDevolvido:
+          type: number
+          format: double
+          minimum: 0.01
+          maximum: 100
+    Devolucao:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        compraId:
+          type: string
+          format: uuid
+        origem:
+          type: string
+          enum: [USUARIO, ATENDIMENTO]
+        percentualDevolvido:
+          type: number
+          format: double
+        data:
+          type: string
+          format: date-time

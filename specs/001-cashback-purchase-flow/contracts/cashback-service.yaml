@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: cashback-service
+  version: "1.0.0"
+  description: >
+    Calcula e credita cashback para compras elegíveis, e calcula/aplica
+    estornos totais ou proporcionais. Chamado pelo outbox do compras-service.
+    Repassa o crédito/estorno ao carteira-service pelo seu próprio outbox
+    (ver research.md). Toda chamada HTTP é síncrona direta.
+servers:
+  - url: https://cashback-service/v1
+paths:
+  /creditos:
+    post:
+      summary: Calcular e creditar cashback para uma compra (FR-002, FR-003, FR-004, FR-005)
+      operationId: calcularCredito
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoCredito'
+      responses:
+        '200':
+          description: >
+            Compra avaliada. Se elegível, um crédito foi calculado; `estado`
+            indica se o repasse ao carteira-service já foi concluído ou está
+            pendente (FR-019). Se não elegível, `credito` é omitido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoCredito'
+        '400':
+          $ref: '#/components/responses/RequisicaoInvalida'
+  /estornos:
+    post:
+      summary: Calcular e aplicar estorno (total ou proporcional) de cashback (FR-007, FR-009, FR-010)
+      operationId: calcularEstorno
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SolicitacaoEstorno'
+      responses:
+        '200':
+          description: Estorno calculado e propagado (ou marcado pendente — FR-019)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResultadoEstorno'
+        '400':
+          $ref: '#/components/responses/RequisicaoInvalida'
+        '404':
+          description: Crédito de cashback referente à compra não encontrado
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+  responses:
+    RequisicaoInvalida:
+      description: Corpo da requisição inválido
+  schemas:
+    SolicitacaoCredito:
+      type: object
+      required: [compraId, usuarioId, valorCentavos, categoria]
+      properties:
+        compraId:
+          type: string
+          format: uuid
+        usuarioId:
+          type: string
+          format: uuid
+        valorCentavos:
+          type: integer
+          format: int64
+        categoria:
+          type: string
+    ResultadoCredito:
+      type: object
+      properties:
+        elegivel:
+          type: boolean
+        credito:
+          $ref: '#/components/schemas/CreditoDeCashback'
+    CreditoDeCashback:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        compraId:
+          type: string
+          format: uuid
+        usuarioId:
+          type: string
+          format: uuid
+        valorCalculadoCentavos:
+          type: integer
+          format: int64
+        estado:
+          type: string
+          enum: [PENDENTE, CONCLUIDO]
+    SolicitacaoEstorno:
+      type: object
+      required: [compraId, origem, origemId]
+      properties:
+        compraId:
+          type: string
+          format: uuid
+        origem:
+          type: string
+          enum: [CANCELAMENTO, DEVOLUCAO]
+        origemId:
+          type: string
+          format: uuid
+          description: id do cancelamento ou da devolução que originou o estorno
+        percentualDevolvido:
+          type: number
+          format: double
+          description: obrigatório quando origem = DEVOLUCAO; percentual desta devolução específica
+    ResultadoEstorno:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        creditoId:
+          type: string
+          format: uuid
+        valorEstornadoCentavos:
+          type: integer
+          format: int64
+        estado:
+          type: string
+          enum: [PENDENTE, CONCLUIDO]

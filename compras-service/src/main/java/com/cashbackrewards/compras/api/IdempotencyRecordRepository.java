@@ -1,0 +1,6 @@
+package com.cashbackrewards.compras.api;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+
+public interface IdempotencyRecordRepository extends JpaRepository<IdempotencyRecord, String> {
+}

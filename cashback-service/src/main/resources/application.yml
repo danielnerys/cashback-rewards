@@ -1,0 +1,31 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: cashback-service
+  datasource:
+    url: jdbc:postgresql://localhost:5433/cashback
+    username: cashback
+    password: cashback
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+carteira-service:
+  base-url: http://localhost:8083
+  connect-timeout-ms: 2000
+  read-timeout-ms: 5000
+
+outbox:
+  dispatch-fixed-delay-ms: 5000
+  max-attempts: 5
+
+cashback:
+  regra-geral-percentual-padrao: 2.00
+  regra-geral-valor-minimo-centavos: 2000
+  regra-geral-teto-centavos: 5000

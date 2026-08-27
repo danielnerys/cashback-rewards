@@ -1,0 +1,214 @@
+openapi: 3.0.3
+info:
+  title: carteira-service
+  version: "1.0.0"
+  description: >
+    Mantém o saldo de cashback de cada usuário, o extrato (append-only) e
+    processa resgates. Recebe créditos e estornos do cashback-service; pode
+    ficar com saldo negativo quando um estorno chega após o resgate já ter
+    ocorrido (FR-011).
+servers:
+  - url: https://carteira-service/v1
+paths:
+  /usuarios/{usuarioId}/saldo:
+    get:
+      summary: Consultar saldo atual do usuário
+      operationId: consultarSaldo
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: usuarioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Saldo atual (pode ser negativo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Saldo'
+  /usuarios/{usuarioId}/extrato:
+    get:
+      summary: Consultar extrato de movimentações (créditos, estornos, resgates) — FR-012, SC-004
+      operationId: consultarExtrato
+      parameters:
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: usuarioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Movimentações em ordem cronológica
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MovimentacaoExtrato'
+  /usuarios/{usuarioId}/creditos:
+    post:
+      summary: Aplicar um crédito de cashback ao saldo do usuário
+      operationId: aplicarCredito
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: usuarioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoCredito'
+      responses:
+        '201':
+          description: Crédito aplicado; saldo atualizado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimentacaoExtrato'
+  /usuarios/{usuarioId}/estornos:
+    post:
+      summary: Aplicar um estorno de cashback ao saldo do usuário (pode gerar saldo negativo — FR-011)
+      operationId: aplicarEstorno
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: usuarioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoEstorno'
+      responses:
+        '201':
+          description: Estorno aplicado; saldo atualizado (podendo ficar negativo)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimentacaoExtrato'
+  /usuarios/{usuarioId}/resgates:
+    post:
+      summary: Solicitar resgate do saldo disponível (FR-013, FR-014, FR-015)
+      operationId: solicitarResgate
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/CorrelationId'
+        - name: usuarioId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoResgate'
+      responses:
+        '201':
+          description: Resgate concluído em uma única interação (SC-005)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovimentacaoExtrato'
+        '409':
+          description: Saldo disponível zero ou negativo, ou valor solicitado maior que o saldo (FR-014, SC-006)
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      schema:
+        type: string
+  schemas:
+    Saldo:
+      type: object
+      properties:
+        usuarioId:
+          type: string
+          format: uuid
+        saldoCentavos:
+          type: integer
+          format: int64
+          description: pode ser negativo (dívida)
+    NovoCredito:
+      type: object
+      required: [creditoId, valorCentavos]
+      properties:
+        creditoId:
+          type: string
+          format: uuid
+          description: id do Crédito de Cashback de origem (cashback-service)
+        valorCentavos:
+          type: integer
+          format: int64
+          minimum: 1
+    NovoEstorno:
+      type: object
+      required: [estornoId, valorCentavos]
+      properties:
+        estornoId:
+          type: string
+          format: uuid
+          description: id do Estorno de Cashback de origem (cashback-service)
+        valorCentavos:
+          type: integer
+          format: int64
+          minimum: 1
+    NovoResgate:
+      type: object
+      required: [valorCentavos]
+      properties:
+        valorCentavos:
+          type: integer
+          format: int64
+          minimum: 1
+    MovimentacaoExtrato:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        usuarioId:
+          type: string
+          format: uuid
+        tipo:
+          type: string
+          enum: [CREDITO, ESTORNO, RESGATE]
+        valorCentavos:
+          type: integer
+          format: int64
+          description: positivo para CREDITO, negativo para ESTORNO e RESGATE
+        referenciaId:
+          type: string
+          format: uuid
+        saldoApos:
+          type: integer
+          format: int64
+        criadoEm:
+          type: string
+          format: date-time

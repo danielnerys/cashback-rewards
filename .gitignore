@@ -1,0 +1,32 @@
+﻿# Maven
+target/
+*.class
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+out/
+
+# Eclipse
+.settings/
+.classpath
+.project
+bin/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code (config local, não versionar)
+.claude/
+
+# Variáveis de ambiente / segredos
+.env
+application-local.properties

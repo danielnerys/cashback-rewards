@@ -1,0 +1,26 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: compras-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/compras
+    username: compras
+    password: compras
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+cashback-service:
+  base-url: http://localhost:8082
+  connect-timeout-ms: 2000
+  read-timeout-ms: 5000
+
+outbox:
+  dispatch-fixed-delay-ms: 5000
+  max-attempts: 5
